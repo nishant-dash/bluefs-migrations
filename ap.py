@@ -163,11 +163,11 @@ def generate_ap(all_osds: list[int]) -> None:
 	osds_string = ','.join(all_osds)
 
 	free_nvme = find_candidate_nvme_for_slow_dbs()
-	fast_ceph_db_vgs = [f"ceph-db-{uuid.uuid4()}"] * 2
-	fast_ceph_db_lvs = [f"osd-db-{uuid.uuid4()}"] * 2
+	fast_ceph_db_vgs = [f"ceph-db-{uuid.uuid4()}" for _ in range(2)]
+	fast_ceph_db_lvs = [f"osd-db-{uuid.uuid4()}" for _ in range(2)]
 
 	slow_ceph_db_vg = "slow-ceph-db-vg"
-	slow_ceph_db_lvs = [f"osd-db-{uuid.uuid4()}"] * 4
+	slow_ceph_db_lvs = [f"osd-db-{uuid.uuid4()}" for _ in range(4)]
 
 	if len(zap_parts) != 1:
 		print(f"Something went wrong... I should only need to tell you to zap 1 raid, but I got {zap_parts}")
