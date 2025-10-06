@@ -13,11 +13,12 @@ class CephOsdMigrationData:
 	osd_fsid: str = ""
 	osd_id: str = ""
 	data_lv: str = ""
+	data_vg: str = ""
 	db_lv: str = ""
 	fast_ceph: bool = False
 
 	def migrate_to_dev(self) -> str:
-		return f"ceph-volume lvm migrate --osd-id {self.osd_id} --osd-fsid {self.osd_fsid} --from db wal --target {self.data_lv}"
+		return f"ceph-volume lvm migrate --osd-id {self.osd_id} --osd-fsid {self.osd_fsid} --from db wal --target {self.data_vg}/{self.data_lv}"
 
 	def migrate_to_target_lv(self, target) -> str:
 		return f"ceph-volume lvm migrate --osd-id {self.osd_id} --osd-fsid {self.osd_fsid} --from {self.data_lv} --target {target}"
@@ -107,6 +108,7 @@ def ceph_lv_info(osd_info: dict) -> (CephOsdMigrationData, set):
 		migration_data.osd_fsid = osd_lv_tags["ceph.osd_fsid"]
 		migration_data.osd_id = osd_lv_tags["ceph.osd_id"]
 		migration_data.data_lv = osd_info["lv_name"]
+		migration_data.data_vg = osd_info["vg_name"]
 		full_db_path = osd_lv_tags["ceph.db_device"]
 		migration_data.db_lv = full_db_path.split('/')[-1]
 
