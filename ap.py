@@ -18,10 +18,12 @@ class CephOsdMigrationData:
 	fast_ceph: bool = False
 
 	def migrate_to_dev(self) -> str:
+		"""Here the target is 'db wal' because its a dedicated device for bluefs db, the lvm migrate cmd will only migrate bluefs db data."""
 		return f"ceph-volume lvm migrate --osd-id {self.osd_id} --osd-fsid {self.osd_fsid} --from db wal --target {self.data_vg}/{self.data_lv}"
 
 	def migrate_to_target_lv(self, target) -> str:
-		return f"ceph-volume lvm migrate --osd-id {self.osd_id} --osd-fsid {self.osd_fsid} --from {self.data_vg}/{self.data_lv} --target {target}"
+		"""Here the source is 'data' because its a shared device for data and bluefs db, the lvm migrate cmd will only migrate bluefs db data. """
+		return f"ceph-volume lvm migrate --osd-id {self.osd_id} --osd-fsid {self.osd_fsid} --from data --target {target}"
 
 	def create_new_db(self, target) -> str:
 		return f"ceph-volume lvm new-db --osd-id {self.osd_id} --osd-fsid {self.osd_fsid} --target {target}"
@@ -40,6 +42,11 @@ def gprint(text) -> None:
 def pprint(text: str) -> None:
 	if not ONLY_SHOW_MIGRATION_CONTEXT:
 		print(text)
+
+
+def gpath(disk) -> str:
+	# return f"/dev/disk/by-dname/{disk}" # pvcreate cant find the disk this way
+	return f"/dev/{disk}"
 
 
 def extract_dev_name_from_md_stat_output_final(dev_name_with_raid_num):
@@ -164,7 +171,7 @@ def generate_ap(all_osds: list[int]) -> None:
 
 	osds_string = ','.join(all_osds)
 
-	free_nvme = find_candidate_nvme_for_slow_dbs()
+	free_nvme = gpath(find_candidate_nvme_for_slow_dbs())
 	fast_ceph_db_vgs = [f"ceph-db-{uuid.uuid4()}" for _ in range(2)]
 	fast_ceph_db_lvs = [f"osd-db-{uuid.uuid4()}" for _ in range(2)]
 
@@ -178,11 +185,12 @@ def generate_ap(all_osds: list[int]) -> None:
 	raid_dev_name = list(zap_parts)[0]
 	raid_name = raid_dev_name.split("/")[-1]
 
-	raid_devs = get_devs_proc_md_stat(raid_name)
-	if not raid_devs[0] and raid_devs[1]:
+	raid_devs_names = get_devs_proc_md_stat(raid_name)
+	if not raid_devs_names[0] and raid_devs_names[1]:
 		print("Could not get raid0 devices from 'cat /proc/mdstat'")
 		return
 
+	raid_devs = [gpath(d) for d in raid_devs_names]
 
 	gprint("# Step 1: Check ceph health and set ceph noout and stop osds")
 	print(f"sudo systemctl stop ceph-osd@{{{osds_string}}}")
@@ -204,16 +212,24 @@ def generate_ap(all_osds: list[int]) -> None:
 	print(f"mdadm --stop /dev/disk/by-dname/{raid_name}")
 	print(f"mdadm --detail /dev/disk/by-dname/{raid_name}")
 	pprint("")
+	print(f"mdadm --examine {raid_devs[0]}")
+	print(f"mdadm --zero-superblock {raid_devs[0]}")
+	print(f"mdadm --examine {raid_devs[0]}")
+
+	print(f"mdadm --examine {raid_devs[1]}")
+	print(f"mdadm --zero-superblock {raid_devs[1]}")
+	print(f"mdadm --examine {raid_devs[1]}")
+	pprint("")
 
 	gprint(f"# Step 5: Create PVs and VGs on the candidate nvme for slow and nvmes freed up from raid {raid_name} for fast")
 
-	print(f"pvcreate /dev/disk/by-dname/{free_nvme}")
-	print(f"vgcreate {slow_ceph_db_vg} /dev/disk/by-dname/{free_nvme}")
+	print(f"pvcreate {free_nvme}")
+	print(f"vgcreate {slow_ceph_db_vg} {free_nvme}")
 
-	print(f"pvcreate /dev/disk/by-dname/{raid_devs[0]}")
-	print(f"pvcreate /dev/disk/by-dname/{raid_devs[1]}")
-	print(f"vgcreate {fast_ceph_db_vgs[0]} /dev/disk/by-dname/{raid_devs[0]}")
-	print(f"vgcreate {fast_ceph_db_vgs[1]} /dev/disk/by-dname/{raid_devs[1]}")
+	print(f"pvcreate {raid_devs[0]}")
+	print(f"pvcreate {raid_devs[1]}")
+	print(f"vgcreate {fast_ceph_db_vgs[0]} {raid_devs[0]}")
+	print(f"vgcreate {fast_ceph_db_vgs[1]} {raid_devs[1]}")
 	pprint("")
 
 
