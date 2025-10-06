@@ -21,7 +21,7 @@ class CephOsdMigrationData:
 		return f"ceph-volume lvm migrate --osd-id {self.osd_id} --osd-fsid {self.osd_fsid} --from db wal --target {self.data_vg}/{self.data_lv}"
 
 	def migrate_to_target_lv(self, target) -> str:
-		return f"ceph-volume lvm migrate --osd-id {self.osd_id} --osd-fsid {self.osd_fsid} --from {self.data_lv} --target {target}"
+		return f"ceph-volume lvm migrate --osd-id {self.osd_id} --osd-fsid {self.osd_fsid} --from {self.data_vg}/{self.data_lv} --target {target}"
 
 	def create_new_db(self, target) -> str:
 		return f"ceph-volume lvm new-db --osd-id {self.osd_id} --osd-fsid {self.osd_fsid} --target {target}"
