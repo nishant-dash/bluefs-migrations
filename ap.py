@@ -4,6 +4,8 @@ import json
 import dataclasses
 import argparse
 import uuid
+from libceph import get_osds
+
 # try to stick to std libs only
 
 
@@ -28,6 +30,8 @@ class CephOsdMigrationData:
 	def create_new_db(self, target) -> str:
 		return f"ceph-volume lvm new-db --osd-id {self.osd_id} --osd-fsid {self.osd_fsid} --target {target}"
 
+	def __lt__(self, other):
+		return self.osd_fsid < other.osd_fsid
 
 
 def print_divide() -> None:
@@ -173,10 +177,14 @@ def generate_ap(all_osds: list[int]) -> None:
 
 	free_nvme = gpath(find_candidate_nvme_for_slow_dbs())
 	fast_ceph_db_vgs = [f"ceph-db-{uuid.uuid4()}" for _ in range(2)]
-	fast_ceph_db_lvs = [f"osd-db-{uuid.uuid4()}" for _ in range(2)]
+	_fast_ceph_fsids = filter(lambda x: 'nvme' in "".join(x[1]['device']), get_osds().items())
+	fast_ceph_fsids = [ i[-1]['fsid'] for i in _fast_ceph_fsids]
+	fast_ceph_db_lvs = sorted([f"osd-db-{fsid}" for fsid in fast_ceph_fsids])
 
 	slow_ceph_db_vg = "slow-ceph-db-vg"
-	slow_ceph_db_lvs = [f"osd-db-{uuid.uuid4()}" for _ in range(4)]
+	_slow_ceph_fsids = filter(lambda x: 'bcache' in "".join(x[1]['device']), get_osds().items())
+	slow_ceph_fsids = [ i[-1]['fsid'] for i in _slow_ceph_fsids]
+	slow_ceph_db_lvs = sorted([f"osd-db-{fsid}" for fsid in slow_ceph_fsids])
 
 	if len(zap_parts) != 1:
 		print(f"Something went wrong... I should only need to tell you to zap 1 raid, but I got {zap_parts}")
@@ -246,7 +254,7 @@ def generate_ap(all_osds: list[int]) -> None:
 	print()
 	gprint("# Step 7.1: Create new db and migrate, for slow ceph")
 	ctr = 0
-	for osd_info in migrations_data:
+	for osd_info in sorted(migrations_data):
 		if not osd_info.fast_ceph:
 			target = f"{slow_ceph_db_vg}/{slow_ceph_db_lvs[ctr]}"
 			print(osd_info.create_new_db(target))
@@ -256,7 +264,7 @@ def generate_ap(all_osds: list[int]) -> None:
 	print()
 	gprint("# Step 7.2: Create new db and migrate, for fast ceph")
 	ctr = 0
-	for osd_info in migrations_data:
+	for osd_info in sorted(migrations_data):
 		mod_idx = ctr % 2
 		if osd_info.fast_ceph:
 			target = f"{fast_ceph_db_vgs[mod_idx]}/{fast_ceph_db_lvs[mod_idx]}"
